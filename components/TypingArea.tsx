@@ -1,89 +1,140 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from "react";
 
 const isLetter = (str: string) => {
-    if (str === "Space") return " ";
-    if (str.length != 4) return false;
-    if (str.substring(0, 3) === "Key") return str.substring(3, 4);
-    return false;
-}
+  if (str === "Space") return " ";
+  if (str.length === 4 && str.startsWith("Key")) return str[3].toLowerCase();
+  return false;
+};
 
 interface TypingAreaProps {
-    setTimer: React.Dispatch<React.SetStateAction<number>>;
-    text: { letter: string; entered: string }[];
-    setText: React.Dispatch<React.SetStateAction<{ letter: string; entered: string }[]>>;
-    textToType: string;
-    setTextToType: React.Dispatch<React.SetStateAction<string>>;
-    getRandomWords: () => string;
+  setTimer: React.Dispatch<React.SetStateAction<number>>;
+  text: { letter: string; entered: string }[];
+  setText: React.Dispatch<React.SetStateAction<{ letter: string; entered: string }[]>>;
+  textToType: string;
+  setTextToType: React.Dispatch<React.SetStateAction<string>>;
+  getRandomWords: () => string;
+  setHasStarted: React.Dispatch<React.SetStateAction<boolean>>;
+  resetBox: () => void;
 }
 
-export function TypingArea({ setTimer, text, setText, textToType, setTextToType, getRandomWords }: TypingAreaProps) {
-    const [currentLetter, setCurrentLetter] = useState(0);
+export function TypingArea({
+  setTimer,
+  text,
+  setText,
+  textToType,
+  setTextToType,
+  getRandomWords,
+  setHasStarted,
+  resetBox,
+}: TypingAreaProps) {
+  const [currentLetter, setCurrentLetter] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-    const resetBox = () => {
-        const randomWords = getRandomWords();
-        setTextToType(randomWords);
-        setText(textToType.split("").map((letter) => ({ letter: letter, entered: "false" })));
-        setCurrentLetter(0);
-        setTimer(0);
-    }
+  // Ensure input stays focused
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
-    interface TextData {
-        letter: string;
-        entered: string;
-    }
+  const addLetter = useCallback(
+    (letter: string) => {
+      if (currentLetter >= textToType.length) return;
 
-    const addLetter = (letter: string) => {
-        letter = letter.toLowerCase();
-        let correct = textToType[currentLetter] === letter;
-        setText((text: TextData[]) => text.map((data, index) => {
-            if (index !== currentLetter) return data;
-            return { letter: data.letter, entered: correct ? "correct" : "wrong" };
-        }));
-        setCurrentLetter(currentLetter + 1);
-    }
+      // Start timer on first character
+      setHasStarted(true);
 
-    const deleteLetter = () => {
-        if (currentLetter === 0) return;
-        setText(text => text.map((data, index) => {
-            if (index !== currentLetter - 1) return data;
-            return { letter: data.letter, entered: "false" };
-        }));
-        setCurrentLetter(currentLetter - 1);
-    }
+      letter = letter.toLowerCase();
+      const correct = textToType[currentLetter] === letter;
 
-    const keyDownHandler = useCallback((event: KeyboardEvent) => {
-        console.log(event.code);
-        if (event.code === "Tab") {
-            resetBox();
-            event.preventDefault();
-            return;
-        }
-        if (event.code === "Backspace") {
-            deleteLetter();
-            return;
-        }
-        if (event.code === "Space") {
-            addLetter(" ");
-            event.preventDefault();
-            return;
-        }
-        let letter = isLetter(event.code);
-        if (letter === false) return;
-        addLetter(letter);
-    }, []);
+      setText((prevText) =>
+        prevText.map((data, index) =>
+          index === currentLetter
+            ? { ...data, entered: correct ? "correct" : "wrong" }
+            : data
+        )
+      );
 
-    useEffect(() => {
-        document.addEventListener("keydown", keyDownHandler);
-        return () => document.removeEventListener("keydown", keyDownHandler);
-    }, [keyDownHandler]);
+      setCurrentLetter((prev) => prev + 1);
+    },
+    [currentLetter, textToType, setText]
+  );
 
-    return (
-        <div id="typing-area" className="w-full h-full bg-inherit text-lg sm:text-3xl sm:pl-20 sm:pr-20">
-            {text.map((data, i) => {
-                return <span key={i} className={(i === currentLetter ? "animate-blink border-l-2" : "border-l-2 border-gray-900") + " " + (data.letter === " " ? "ml-[0.3rem]" : "ml-[0.05rem]") + " box-border " + (data.entered === "false" ? "text-gray-700" : (data.entered === "wrong" ? "text-red-900" : "text-gray-300"))}>{data.letter}</span>
-            })}
-        </div>
+  const deleteLetter = useCallback(() => {
+    if (currentLetter === 0) return;
+
+    setText((prevText) =>
+      prevText.map((data, index) =>
+        index === currentLetter - 1
+          ? { ...data, entered: "false" }
+          : data
+      )
     );
+
+    setCurrentLetter((prev) => prev - 1);
+  }, [currentLetter, setText]);
+
+  const keyDownHandler = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.code === "Backspace") {
+        deleteLetter();
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        addLetter(" ");
+        return;
+      }
+
+      const letter = isLetter(event.code);
+      if (letter) {
+        addLetter(letter);
+      }
+    },
+    [deleteLetter, addLetter]
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", keyDownHandler);
+    return () => document.removeEventListener("keydown", keyDownHandler);
+  }, [keyDownHandler]);
+
+  // Reset cursor position when text changes
+  useEffect(() => {
+    setCurrentLetter(0);
+    inputRef.current?.focus();
+  }, [textToType]);
+
+  return (
+    <div
+      id="typing-area"
+      className="w-full h-full bg-inherit pt-40 text-lg sm:text-3xl sm:pl-20 sm:pr-20 relative"
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        className="opacity-0 absolute top-0 left-0 h-0 w-0"
+        autoFocus
+      />
+      {text.map((data, i) => (
+  <span
+    key={i}
+    className={`
+      ${i === currentLetter ? "bg-gray-500/30 " : ""}
+      ${data.letter === " " ? "mr-[0.3rem]" : "mr-[0.05rem]"}
+      ${data.entered === "false"
+        ? "text-gray-400"
+        : data.entered === "wrong"
+        ? "text-red-500"
+        : "text-gray-100"}
+    `}
+    style={{ fontSize: "44px" }}  // Set your desired font size here
+  >
+    {data.letter}
+  </span>
+))}
+
+    </div>
+  );
 }
